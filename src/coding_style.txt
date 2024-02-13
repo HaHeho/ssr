@@ -43,8 +43,11 @@ if (something) a = c;
 // no space before ',' ')' ']' and ';'.
 // in most cases, no space before '['.
 // no space before ',' but one space afterward.
+// clang-format off: intentional example
 void my_function (int arg1, int arg2 ) ;  // bad
 void my_function(int arg1, int arg2);     // better
+// clang-format on
+void my_function(int arg1, int arg2);  // result
 
 // but spaces after 'if', 'for', 'while', 'switch', etc.
 
@@ -55,8 +58,11 @@ float result = (a + b) * factor;
 // never use more than one empty line.
 
 // '*' and '&' are next to the types, not next to the variables.
+// clang-format off: intentional example
 float *data;  // bad, old-school C-style
 float* data;  // better
+// clang-format on
+float* data;  // result
 
 // CLASSES
 //
@@ -92,18 +98,20 @@ class MyClass : public MyBaseClass
 // the first line starts with ':' all others with ','.
 // each member variable gets its own line.
 MyClass::MyClass()
-  : public_val1(99)
-  , _private_val1(129)
-  , _private_val2(0)
+  : public_val1(9999)
+  , _private_val1(9999)
+  , _private_val2(9999)
 {}
+
+// short constructors may be fit on one line.
+MyClass::MyClass() : public_val1(0), _private_val1(0), _private_val2(0) {}
 
 // within the class implementation, non-uglified functions/variables are used
 // with a prefixed 'this->'.
 // this is redundant, but it helps to show where a function/variable belongs to.
-int my_function1(2);       // unclear where this function comes from
-int this->my_function1(3); // better
-int _private_val1 = 42;
-// clear: it has to be a class member (because uglified = private/protected)
+int my_function1(2);  // unclear where this function comes from
+int this->my_function1(3);  // better
+int _private_val1 = 42;  // clear it is a class member since it's uglified
 
 // NAMESPACES
 //
@@ -117,7 +125,10 @@ int my_namespace_member(int arg);
 
 // if a namespace member is implemented in a *.cpp file, the namespace is
 // prepended to the function name.
-int mynamespace::my_namespace_member(int arg) { return 42; }
+int mynamespace::my_namespace_member(int arg)
+{
+  return 42;
+}
 
 // TYPE CASTING
 //
@@ -133,19 +144,25 @@ int step = static_cast<int>(value);  // better
 // return type.
 // if lines are broken at operators or punctuation marks, those should end up at
 // the beginning of the second line.
-int my_very_special_and_long_function(my_rather_special_data_t input1
-    , my_rather_special_data_t input2)
+int my_very_special_and_long_function(my_rather_special_data_t input1,
+  my_rather_special_data_t input2)
 {
   int my_very_long_result = 27 * my_other_very_special_and_long_function(input1)
     + my_other_very_special_and_long_function(input2);
   return my_very_long_result * my_very_long_result;
 }
 
-// if the declaration of a for-loop doesn't fit on one line, put each semicolon
+// short for-loop declarations that fit should be put on one line
+for (size_t i = 0; i < 100; i++)
+{
+  do_something(i);
+}
+
+// if the declaration of a for-loop doesn't fit on one line, put each statement
 // on a new line.
-for (MyContainerClass::iterator i = my_container.begin()
-    ; i != my_container.end()
-    ; ++i)
+for (MyContainerClass::iterator i = my_container.begin();
+     i != my_container.end();
+     ++i)
 {
   do_something(*i);
 }
@@ -153,8 +170,7 @@ for (MyContainerClass::iterator i = my_container.begin()
 // template definitions always go on their own line, return types, especially if
 // they are nested types, may also use their own line.
 template<typename T>
-typename T::my_inner_type
-some_function(const T& input)
+typename T::my_inner_type some_function(const T& input)
 {
   // ...
   return something;
