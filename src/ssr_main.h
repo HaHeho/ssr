@@ -38,7 +38,7 @@ extern "C" inline void signal_handler(int signal)
   std::cerr << "\nInterrupted by signal " << signal << std::endl;
   std::exit(EXIT_FAILURE);
 }
- 
+
 namespace ssr
 {
 

@@ -31,13 +31,13 @@
 #define SSR_BINAURALRENDERER_H
 
 #include "rendererbase.h"
-#include "apf/iterator.h"  // for apf::cast_proxy, apf::make_cast_proxy()
+#include "apf/iterator.h"  // for apf::cast_proxy, apf::make_cast_proxy
 #include "apf/convolver.h"  // for apf::conv::*
 #include "apf/container.h"  // for apf::fixed_matrix
 #include "apf/sndfiletools.h"  // for apf::load_sndfile
 #include "apf/combine_channels.h"  // for apf::raised_cosine_fade, ...
 
-#include "gml/util.hpp"  // for gml::radians(), gml::degrees()
+#include "gml/util.hpp"  // for gml::radians, gml::degrees
 
 #ifdef ENABLE_SOFA
 #include <mysofa.h>
@@ -53,7 +53,10 @@ class BinauralRenderer : public SourceToOutput<BinauralRenderer, RendererBase>
     using _base = SourceToOutput<BinauralRenderer, ssr::RendererBase>;
 
   public:
-    static const char* name() { return "BinauralRenderer"; }
+    static const char* name()
+    {
+      return "BinauralRenderer";
+    }
 
     class SourceChannel;
     class Source;
@@ -98,8 +101,9 @@ class BinauralRenderer : public SourceToOutput<BinauralRenderer, RendererBase>
 #endif
 };
 
-class BinauralRenderer::SourceChannel : public apf::conv::Output
-                                      , public apf::has_begin_and_end<float*>
+class BinauralRenderer::SourceChannel
+  : public apf::conv::Output
+  , public apf::has_begin_and_end<float*>
 {
   public:
     SourceChannel(const apf::conv::Input& input)
@@ -128,15 +132,16 @@ class BinauralRenderer::SourceChannel : public apf::conv::Output
     const size_t _block_size;
 };
 
-void
-BinauralRenderer::_load_hrtfs(const std::string& filename, size_t size)
+void BinauralRenderer::_load_hrtfs(const std::string& filename, size_t size)
 {
   auto idx = filename.find_last_of(".");
   if (idx != std::string::npos)
   {
     auto ext = filename.substr(idx + 1);
-    std::transform(ext.begin(), ext.end(), ext.begin()
-        , [](unsigned char c){ return std::tolower(c); });
+    std::transform(ext.begin(),
+      ext.end(),
+      ext.begin(),
+      [](unsigned char c) { return std::tolower(c); });
     if (ext == "wav")
     {
       _load_wav(filename, size);
@@ -146,14 +151,12 @@ BinauralRenderer::_load_hrtfs(const std::string& filename, size_t size)
 #ifdef ENABLE_SOFA
   _load_sofa(filename, size);
 #else
-  throw std::logic_error(
-      "Only WAV files are supported "
-      "(SOFA support was disabled at compile time)");
+  throw std::logic_error("Only WAV files are supported "
+                         "(SOFA support was disabled at compile time)");
 #endif
 }
 
-void
-BinauralRenderer::_load_wav(const std::string& filename, size_t size)
+void BinauralRenderer::_load_wav(const std::string& filename, size_t size)
 {
   auto hrir_file = apf::load_sndfile(filename, this->sample_rate(), 0);
 
@@ -191,35 +194,35 @@ BinauralRenderer::_load_wav(const std::string& filename, size_t size)
   // prepare neutral filter (dirac impulse) for interpolation around the head
 
   // get index of absolute maximum in first channel (frontal direcion, left)
-  apf::fixed_matrix<sample_type>::slice_iterator maximum
-    = std::max_element(transpose.slices.begin()->begin()
-      , transpose.slices.begin()->end(), _cmp_abs);
+  apf::fixed_matrix<sample_type>::slice_iterator maximum = std::max_element(
+    transpose.slices.begin()->begin(),
+    transpose.slices.begin()->end(),
+    _cmp_abs);
 
-  int index = static_cast<int>(std::distance(transpose.slices.begin()->begin(), maximum));
+  int index = static_cast<int>(
+    std::distance(transpose.slices.begin()->begin(), maximum));
 
   auto impulse = apf::fixed_vector<sample_type>(index + 1);
   impulse.back() = 1;
 
-  _neutral_filter.reset(new apf::conv::Filter(this->block_size()
-        , impulse.begin(), impulse.end()));
+  _neutral_filter.reset(
+    new apf::conv::Filter(this->block_size(), impulse.begin(), impulse.end()));
   // Number of partitions may be different from _hrtfs!
 }
 
 #ifdef ENABLE_SOFA
-void
-BinauralRenderer::_load_sofa(const std::string& filename, size_t size)
+void BinauralRenderer::_load_sofa(const std::string& filename, size_t size)
 {
   int major, minor, patch;
   mysofa_getversion(&major, &minor, &patch);
   if (std::tuple{major, minor, patch} < std::tuple{0, 9, 1}
-      && this->threads() != 1)
+    && this->threads() != 1)
   {
     throw std::logic_error("libmysofa >= 0.9.1 is needed for multi-threading");
   }
   int err;
   auto hrir_file = std::unique_ptr<MYSOFA_HRTF, decltype(&mysofa_free)>{
-    mysofa_load(filename.c_str(), &err),
-    &mysofa_free};
+    mysofa_load(filename.c_str(), &err), &mysofa_free};
   if (!hrir_file)
   {
     throw std::runtime_error("SOFA load error: " + std::to_string(err));
@@ -244,10 +247,11 @@ BinauralRenderer::_load_sofa(const std::string& filename, size_t size)
   // TODO: normalize with mysofa_loudness?
   mysofa_tocartesian(hrir_file.get());
   _filter_lookup = {mysofa_lookup_init(hrir_file.get()), &mysofa_lookup_free};
-	if (!_filter_lookup) {
+  if (!_filter_lookup)
+  {
     throw std::runtime_error("SOFA lookup init error");
-	}
-	// TODO: mysofa_neighborhood_init_withstepdefine()?
+  }
+  // TODO: mysofa_neighborhood_init_withstepdefine()?
   if (size == 0)
   {
     size = hrir_file->N;
@@ -260,7 +264,7 @@ BinauralRenderer::_load_sofa(const std::string& filename, size_t size)
   _partitions = apf::conv::min_partitions(this->block_size(), size);
   auto temp = apf::conv::Transform(this->block_size());
   _hrtfs = std::make_unique<hrtf_set_t>(
-      _angles * 2, this->block_size(), _partitions);
+    _angles * 2, this->block_size(), _partitions);
   auto target = _hrtfs->begin();
   assert(hrir_file->R == 2);  // Number of ears
   assert(_angles * 2 * size == hrir_file->DataIR.elements);
@@ -285,8 +289,8 @@ BinauralRenderer::_load_sofa(const std::string& filename, size_t size)
   auto impulse = apf::fixed_vector<sample_type>(index + 1);
   impulse.back() = 1;
 
-  _neutral_filter = std::make_unique<apf::conv::Filter>(this->block_size()
-        , impulse.begin(), impulse.end());
+  _neutral_filter = std::make_unique<apf::conv::Filter>(
+    this->block_size(), impulse.begin(), impulse.end());
   // Number of partitions may be different from _hrtfs!
 }
 #endif
@@ -326,9 +330,11 @@ class BinauralRenderer::Output : public _base::Output
     }
 
   private:
-    apf::CombineChannelsCrossfadeCopy<apf::cast_proxy<SourceChannel
-      , sourcechannels_t>, buffer_type
-      , apf::raised_cosine_fade<sample_type>> _combiner;
+    apf::CombineChannelsCrossfadeCopy<
+      apf::cast_proxy<SourceChannel, sourcechannels_t>,
+      buffer_type,
+      apf::raised_cosine_fade<sample_type>>
+      _combiner;
 };
 
 void BinauralRenderer::load_reproduction_setup()
@@ -362,7 +368,9 @@ void BinauralRenderer::load_reproduction_setup()
   this->add(params);
 }
 
-class BinauralRenderer::Source : public apf::conv::Input, public _base::Source
+class BinauralRenderer::Source
+  : public apf::conv::Input
+  , public _base::Source
 {
   private:
     void _process();
@@ -408,7 +416,7 @@ void BinauralRenderer::Source::_process()
   float source_distance = length(src_pos - ref_pos);
 
   if (this->weighting_factor != 0 && source_distance < 0.5f
-        && this->model != "plane")
+    && this->model != "plane")
   {
     interp_factor = 1.0f - 2 * source_distance;
   }
@@ -439,8 +447,7 @@ void BinauralRenderer::Source::_process()
   }
   // Rotate selector 90 degrees clockwise to align main direction with x-axis
   selector = transform(
-      gml::qrotate(gml::radians(-90.0f), {0.0f, 0.0f, 1.0f}),
-      selector);
+    gml::qrotate(gml::radians(-90.0f), {0.0f, 0.0f, 1.0f}), selector);
 
 #ifdef ENABLE_SOFA
   auto* lookup = this->parent._filter_lookup.get();
@@ -457,8 +464,8 @@ void BinauralRenderer::Source::_process()
     auto y = selector[1];
     // NB: We ignore the z component selector[2]
     auto angle = gml::degrees(std::atan2(y, x));
-    _hrtf_index = size_t(apf::math::wrap(
-          angle * angles / 360.0f + 0.5f, angles));
+    _hrtf_index = size_t(
+      apf::math::wrap(angle * angles / 360.0f + 0.5f, angles));
 #ifdef ENABLE_SOFA
   }
 #endif
@@ -519,12 +526,11 @@ void BinauralRenderer::Source::_process()
       else
       {
         // Interpolate between selected HRTF and neutral filter (Dirac)
-        apf::conv::transform_nested(hrtf
-            , *this->parent._neutral_filter, channel.temporary_hrtf
-            , [this] (sample_type one, sample_type two)
-              {
-                return (1.0f - _interp_factor) * one + _interp_factor * two;
-              });
+        apf::conv::transform_nested(hrtf,
+          *this->parent._neutral_filter,
+          channel.temporary_hrtf,
+          [this](sample_type one, sample_type two)
+          { return (1.0f - _interp_factor) * one + _interp_factor * two; });
         this->sourcechannels[i].set_filter(channel.temporary_hrtf);
       }
     }

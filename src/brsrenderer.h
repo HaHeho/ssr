@@ -46,7 +46,10 @@ class BrsRenderer : public SourceToOutput<BrsRenderer, RendererBase>
     using _base = SourceToOutput<BrsRenderer, ssr::RendererBase>;
 
   public:
-    static const char* name() { return "BrsRenderer"; }
+    static const char* name()
+    {
+      return "BrsRenderer";
+    }
 
     using Input = _base::DefaultInput;
     class Source;
@@ -70,19 +73,19 @@ class BrsRenderer : public SourceToOutput<BrsRenderer, RendererBase>
     apf::raised_cosine_fade<sample_type> _fade;
 };
 
-struct BrsRenderer::SourceChannel : apf::has_begin_and_end<sample_type*>
-                                  , apf::conv::Output
+struct BrsRenderer::SourceChannel
+  : apf::has_begin_and_end<sample_type*>
+  , apf::conv::Output
 {
-  explicit SourceChannel(const apf::conv::Input& in)
-    : apf::conv::Output(in)
-  {}
+    explicit SourceChannel(const apf::conv::Input& in) : apf::conv::Output(in)
+    {}
 
-  // out-of-class definition because of cyclic dependencies with Source
-  void update();
-  void convolve_and_more(sample_type weight);
+    // out-of-class definition because of cyclic dependencies with Source
+    void update();
+    void convolve_and_more(sample_type weight);
 
-  apf::CombineChannelsResult::type crossfade_mode;
-  sample_type new_weighting_factor;
+    apf::CombineChannelsResult::type crossfade_mode;
+    sample_type new_weighting_factor;
 };
 
 class BrsRenderer::Source : public _base::Source
@@ -93,16 +96,15 @@ class BrsRenderer::Source : public _base::Source
       , _weighting_factor(-1.0f)
       , _brtf_index(size_t(-1))
     {
-      SndfileHandle ir_file
-        = apf::load_sndfile(p.get<std::string>("properties-file")
-            , this->parent.sample_rate(), 0);
+      SndfileHandle ir_file = apf::load_sndfile(
+        p.get<std::string>("properties-file"), this->parent.sample_rate(), 0);
 
       size_t no_of_channels = ir_file.channels();
 
       if (no_of_channels % 2 != 0)
       {
         throw std::logic_error(
-            "Number of channels in BRIR file must be a multiple of 2!");
+          "Number of channels in BRIR file must be a multiple of 2!");
       }
 
       _angles = no_of_channels / 2;
@@ -154,7 +156,7 @@ class BrsRenderer::Source : public _base::Source
       // (source positions are NOT considered!)
       // 90 degree is in the middle of index 0
       _brtf_index = size_t(apf::math::wrap(
-          (azi - 90.0f) * float(_angles) / 360.0f + 0.5f, float(_angles)));
+        (azi - 90.0f) * float(_angles) / 360.0f + 0.5f, float(_angles)));
 
       using namespace apf::CombineChannelsResult;
       auto crossfade_mode = apf::CombineChannelsResult::type();
@@ -166,9 +168,8 @@ class BrsRenderer::Source : public _base::Source
       {
         crossfade_mode = nothing;
       }
-      else if (queues_empty
-          && !_weighting_factor.changed()
-          && !_brtf_index.changed())
+      else if (queues_empty && !_weighting_factor.changed()
+        && !_brtf_index.changed())
       {
         crossfade_mode = constant;
       }
@@ -269,13 +270,14 @@ class BrsRenderer::Output : public _base::Output
     }
 
   private:
-    apf::CombineChannelsCrossfadeCopy<apf::cast_proxy<SourceChannel
-      , sourcechannels_t>, buffer_type
-      , apf::raised_cosine_fade<sample_type>> _combiner;
+    apf::CombineChannelsCrossfadeCopy<
+      apf::cast_proxy<SourceChannel, sourcechannels_t>,
+      buffer_type,
+      apf::raised_cosine_fade<sample_type>>
+      _combiner;
 };
 
-void
-BrsRenderer::load_reproduction_setup()
+void BrsRenderer::load_reproduction_setup()
 {
   // TODO: generalize this for all headphone-based renderers!
 
