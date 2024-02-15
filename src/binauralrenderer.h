@@ -30,6 +30,8 @@
 #ifndef SSR_BINAURALRENDERER_H
 #define SSR_BINAURALRENDERER_H
 
+#include <memory>  // for std::unique_ptr, std::make_unique
+
 #include "rendererbase.h"
 #include "apf/iterator.h"  // for apf::cast_proxy, apf::make_cast_proxy
 #include "apf/convolver.h"  // for apf::conv::*
@@ -50,7 +52,7 @@ namespace ssr
 class BinauralRenderer : public SourceToOutput<BinauralRenderer, RendererBase>
 {
   private:
-    using _base = SourceToOutput<BinauralRenderer, ssr::RendererBase>;
+    using _base = SourceToOutput<BinauralRenderer, RendererBase>;
 
   public:
     static const char* name()
@@ -63,10 +65,13 @@ class BinauralRenderer : public SourceToOutput<BinauralRenderer, RendererBase>
     class Output;
     class RenderFunction;
 
-    BinauralRenderer(const apf::parameter_map& params)
+    explicit BinauralRenderer(const apf::parameter_map& params)
       : _base(params)
+      // WARNING "instantiation of member function requested here"
+      // (I don't think this can be fixed without refactoring APF)
       , _fade(this->block_size())
       , _partitions(0)
+      , _angles(0)
     {}
 
     void load_reproduction_setup();
@@ -106,15 +111,15 @@ class BinauralRenderer::SourceChannel
   , public apf::has_begin_and_end<float*>
 {
   public:
-    SourceChannel(const apf::conv::Input& input)
+    explicit SourceChannel(const apf::conv::Input& input)
       : apf::conv::Output(input)
       , temporary_hrtf(input.block_size(), input.partitions())
       , _block_size(input.block_size())
     {}
 
-    void convolve_and_more(sample_type weight)
+    void convolve_and_more(sample_type _weight)
     {
-      _begin = this->convolve(weight);
+      _begin = this->convolve(_weight);
       _end = _begin + _block_size;
     }
 
@@ -125,8 +130,8 @@ class BinauralRenderer::SourceChannel
 
     apf::conv::Filter temporary_hrtf;
 
-    sample_type weight;
-    apf::CombineChannelsResult::type crossfade_mode;
+    sample_type weight{};
+    apf::CombineChannelsResult::type crossfade_mode{};
 
   private:
     const size_t _block_size;
@@ -134,7 +139,7 @@ class BinauralRenderer::SourceChannel
 
 void BinauralRenderer::_load_hrtfs(const std::string& filename, size_t size)
 {
-  auto idx = filename.find_last_of(".");
+  auto idx = filename.find_last_of('.');
   if (idx != std::string::npos)
   {
     auto ext = filename.substr(idx + 1);
@@ -173,17 +178,18 @@ void BinauralRenderer::_load_wav(const std::string& filename, size_t size)
 
   if (size == 0) size = hrir_file.frames();
 
-  // Deinterleave channels and transform to FFT domain
+  // De-interleave channels and transform to FFT domain
 
   auto transpose = apf::fixed_matrix<float>(size, no_of_channels);
 
-  size = hrir_file.readf(transpose.data(), size);
+  size = hrir_file.readf(transpose.data(), static_cast<sf_count_t>(size));
 
   _partitions = apf::conv::min_partitions(this->block_size(), size);
 
   auto temp = apf::conv::Transform(this->block_size());
 
-  _hrtfs.reset(new hrtf_set_t(no_of_channels, this->block_size(), _partitions));
+  _hrtfs = std::make_unique<hrtf_set_t>(
+    no_of_channels, this->block_size(), _partitions);
 
   auto target = _hrtfs->begin();
   for (const auto& slice: transpose.slices)
@@ -193,7 +199,8 @@ void BinauralRenderer::_load_wav(const std::string& filename, size_t size)
 
   // prepare neutral filter (dirac impulse) for interpolation around the head
 
-  // get index of absolute maximum in first channel (frontal direcion, left)
+  // get index of the absolute maximum in the first channel
+  // (frontal direction, left)
   apf::fixed_matrix<sample_type>::slice_iterator maximum = std::max_element(
     transpose.slices.begin()->begin(),
     transpose.slices.begin()->end(),
@@ -205,9 +212,9 @@ void BinauralRenderer::_load_wav(const std::string& filename, size_t size)
   auto impulse = apf::fixed_vector<sample_type>(index + 1);
   impulse.back() = 1;
 
-  _neutral_filter.reset(
-    new apf::conv::Filter(this->block_size(), impulse.begin(), impulse.end()));
-  // Number of partitions may be different from _hrtfs!
+  _neutral_filter = std::make_unique<apf::conv::Filter>(
+    this->block_size(), impulse.begin(), impulse.end());
+  // the number of partitions may be different from _hrtfs!
 }
 
 #ifdef ENABLE_SOFA
@@ -239,7 +246,8 @@ void BinauralRenderer::_load_sofa(const std::string& filename, size_t size)
       throw std::logic_error("SOFA files with delays are not (yet?) supported");
     }
   }
-  err = mysofa_resample(hrir_file.get(), this->sample_rate());
+  err = mysofa_resample(
+    hrir_file.get(), static_cast<float>(this->sample_rate()));
   if (err != MYSOFA_OK)
   {
     throw std::runtime_error("SOFA resample error: " + std::to_string(err));
@@ -291,14 +299,14 @@ void BinauralRenderer::_load_sofa(const std::string& filename, size_t size)
 
   _neutral_filter = std::make_unique<apf::conv::Filter>(
     this->block_size(), impulse.begin(), impulse.end());
-  // Number of partitions may be different from _hrtfs!
+  // the number of partitions may be different from _hrtfs!
 }
 #endif
 
 class BinauralRenderer::RenderFunction
 {
   public:
-    RenderFunction() : _in(0) {}
+    RenderFunction() : _in(nullptr) {}
 
     apf::CombineChannelsResult::type select(SourceChannel& in)
     {
@@ -319,7 +327,7 @@ class BinauralRenderer::RenderFunction
 class BinauralRenderer::Output : public _base::Output
 {
   public:
-    Output(const Params& p)
+    explicit Output(const Params& p)
       : _base::Output(p)
       , _combiner(this->sourcechannels, this->buffer, this->parent._fade)
     {}
@@ -354,14 +362,14 @@ void BinauralRenderer::load_reproduction_setup()
 
   const std::string prefix = this->params.get("system_output_prefix", "");
 
-  if (prefix != "")
+  if (!prefix.empty())
   {
     // TODO: read target from proper reproduction file
     params.set("connect-to", prefix + "1");
   }
   this->add(params);
 
-  if (prefix != "")
+  if (!prefix.empty())
   {
     params.set("connect-to", prefix + "2");
   }
@@ -376,7 +384,7 @@ class BinauralRenderer::Source
     void _process();
 
   public:
-    Source(const Params& p)
+    explicit Source(const Params& p)
       // TODO: assert that p.parent != 0?
       : apf::conv::Input(p.parent->block_size(), p.parent->_partitions)
       , _base::Source(p, 2, *this)
@@ -434,9 +442,9 @@ void BinauralRenderer::Source::_process()
   {
     // Relative source rotation, as seen from the reference
     auto rel_rot = anti_ref_rot * src_rot;
-    // Vector corresponding to that rotation (roll angle is ignored)
+    // Vector corresponding to that rotation (roll angles are ignored)
     selector = transform(rel_rot, {0.0f, 1.0f, 0.0f});
-    // Plane wave orientation points into direction of propagation,
+    // Plane wave orientation points into the direction of propagation,
     // we want to point to where it comes from:
     selector = -selector;
   }
@@ -445,7 +453,8 @@ void BinauralRenderer::Source::_process()
     // Vector of incidence, as seen from the reference
     selector = transform(anti_ref_rot, (src_pos - ref_pos));
   }
-  // Rotate selector 90 degrees clockwise to align main direction with x-axis
+  // Rotate the selector 90 degrees clockwise to align the main direction with
+  // the x-axis
   selector = transform(
     gml::qrotate(gml::radians(-90.0f), {0.0f, 0.0f, 1.0f}), selector);
 
@@ -471,7 +480,7 @@ void BinauralRenderer::Source::_process()
 #endif
 
   using namespace apf::CombineChannelsResult;
-  auto crossfade_mode = apf::CombineChannelsResult::type();
+  type crossfade_mode;
 
   // Check on one channel only, filters are always changed in parallel
   bool queues_empty = this->sourcechannels[0].queues_empty();

@@ -30,6 +30,8 @@
 #ifndef SSR_BRSRENDERER_H
 #define SSR_BRSRENDERER_H
 
+#include <memory>
+
 #include "rendererbase.h"
 #include "legacy_orientation.h"
 
@@ -57,8 +59,10 @@ class BrsRenderer : public SourceToOutput<BrsRenderer, RendererBase>
     class Output;
     class RenderFunction;
 
-    BrsRenderer(const apf::parameter_map& params)
+    explicit BrsRenderer(const apf::parameter_map& params)
       : _base(params)
+      // WARNING "instantiation of member function requested here"
+      // (I don't think this can be fixed without refactoring APF)
       , _fade(this->block_size())
     {}
 
@@ -84,14 +88,14 @@ struct BrsRenderer::SourceChannel
     void update();
     void convolve_and_more(sample_type weight);
 
-    apf::CombineChannelsResult::type crossfade_mode;
-    sample_type new_weighting_factor;
+    apf::CombineChannelsResult::type crossfade_mode{};
+    sample_type new_weighting_factor{};
 };
 
 class BrsRenderer::Source : public _base::Source
 {
   public:
-    Source(const Params& p)
+    explicit Source(const Params& p)
       : _base::Source(p)
       , _weighting_factor(-1.0f)
       , _brtf_index(size_t(-1))
@@ -116,7 +120,7 @@ class BrsRenderer::Source : public _base::Source
       auto ir_data = matrix_t(size, no_of_channels);
 
       // TODO: check return value?
-      ir_file.readf(ir_data.data(), size);
+      ir_file.readf(ir_data.data(), static_cast<sf_count_t>(size));
 
       size_t block_size = this->parent.block_size();
 
@@ -124,7 +128,8 @@ class BrsRenderer::Source : public _base::Source
 
       size_t partitions = apf::conv::min_partitions(block_size, size);
 
-      _brtf_set.reset(new brtf_set_t(no_of_channels, block_size, partitions));
+      _brtf_set = std::make_unique<brtf_set_t>(
+        no_of_channels, block_size, partitions);
 
       auto target = _brtf_set->begin();
       for (const auto& slice: ir_data.slices)
@@ -134,7 +139,8 @@ class BrsRenderer::Source : public _base::Source
 
       assert(target == _brtf_set->end());
 
-      _convolver_input.reset(new apf::conv::Input(block_size, partitions));
+      _convolver_input = std::make_unique<apf::conv::Input>(
+        block_size, partitions);
 
       this->sourcechannels.reserve(2);
       this->sourcechannels.emplace_back(*_convolver_input);
@@ -154,12 +160,12 @@ class BrsRenderer::Source : public _base::Source
 
       // get BRTF index from listener orientation
       // (source positions are NOT considered!)
-      // 90 degree is in the middle of index 0
+      // 90 degrees is in the middle of index 0
       _brtf_index = size_t(apf::math::wrap(
         (azi - 90.0f) * float(_angles) / 360.0f + 0.5f, float(_angles)));
 
       using namespace apf::CombineChannelsResult;
-      auto crossfade_mode = apf::CombineChannelsResult::type();
+      type crossfade_mode;
 
       // Check on one channel only, filters are always changed in parallel
       bool queues_empty = this->sourcechannels[0].queues_empty();
@@ -238,7 +244,7 @@ void BrsRenderer::SourceChannel::convolve_and_more(sample_type weight)
 class BrsRenderer::RenderFunction
 {
   public:
-    RenderFunction() : _in(0) {}
+    RenderFunction() : _in(nullptr) {}
 
     apf::CombineChannelsResult::type select(SourceChannel& in)
     {
@@ -259,7 +265,7 @@ class BrsRenderer::RenderFunction
 class BrsRenderer::Output : public _base::Output
 {
   public:
-    Output(const Params& p)
+    explicit Output(const Params& p)
       : _base::Output(p)
       , _combiner(this->sourcechannels, this->buffer, this->parent._fade)
     {}
@@ -287,14 +293,14 @@ void BrsRenderer::load_reproduction_setup()
 
   const std::string prefix = this->params.get("system_output_prefix", "");
 
-  if (prefix != "")
+  if (!prefix.empty())
   {
     // TODO: read target from proper reproduction file
     params.set("connect-to", prefix + "1");
   }
   this->add(params);
 
-  if (prefix != "")
+  if (!prefix.empty())
   {
     params.set("connect-to", prefix + "2");
   }
